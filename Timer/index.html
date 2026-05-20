@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-title" content="组间计时">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>组间计时</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  width:100%;height:100%;
+  background:#000;
+  overflow:hidden;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
+  font-family:-apple-system,'Helvetica Neue',Arial,sans-serif
+}
+
+/* floating ball */
+#ball{
+  position:fixed;
+  border-radius:50%;
+  background:rgba(255,255,255,.06);
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+  border:2px solid rgba(255,255,255,.08);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  z-index:10;
+  touch-action:none;
+  width:min(280px,72vw);
+  height:min(280px,72vw);
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  transition:box-shadow .4s;
+  will-change:transform,top,left
+}
+#ball.running{box-shadow:0 0 40px rgba(0,230,118,.15)}
+#ball.paused{box-shadow:0 0 16px rgba(255,255,255,.05)}
+
+/* svg ring */
+#ball svg{
+  position:absolute;
+  width:94%;height:94%;
+  transform:rotate(-90deg)
+}
+#ball .ring-bg{fill:none;stroke:rgba(255,255,255,.06);stroke-width:6}
+#ball .ring-fg{
+  fill:none;stroke-width:6;stroke-linecap:round;
+  transition:stroke-dashoffset .35s ease,stroke .4s ease
+}
+
+/* center text */
+#display{
+  position:relative;z-index:2;
+  font-size:min(76px,19vw);
+  font-weight:200;
+  letter-spacing:-2px;
+  color:#fff;
+  font-variant-numeric:tabular-nums;
+  transition:color .4s ease;
+  line-height:1
+}
+#status{
+  position:absolute;
+  bottom:22%;
+  font-size:min(13px,3.2vw);
+  letter-spacing:2px;
+  opacity:.5;
+  transition:opacity .3s,color .4s;
+  color:#fff;
+  text-transform:uppercase;
+  z-index:2
+}
+
+/* set badge */
+#set-badge{
+  position:absolute;
+  top:-4px;right:-4px;
+  background:rgba(255,255,255,.1);
+  border-radius:20px;
+  padding:4px 12px;
+  font-size:min(15px,3.8vw);
+  font-weight:600;
+  color:#fff;
+  z-index:5;
+  border:1px solid rgba(255,255,255,.08);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  transition:opacity .3s;
+  pointer-events:none
+}
+#set-badge.hidden{opacity:0}
+
+/* tap hint */
+#hint{
+  position:fixed;
+  bottom:max(20px,env(safe-area-inset-bottom,20px));
+  left:50%;transform:translateX(-50%);
+  color:rgba(255,255,255,.2);
+  font-size:min(12px,3vw);
+  letter-spacing:1px;
+  z-index:1;
+  pointer-events:none;
+  transition:opacity .5s;
+  white-space:nowrap
+}
+#hint.hidden{opacity:0}
+
+/* screen flash */
+.flash-overlay{
+  display:none;position:fixed;
+  inset:0;z-index:20;
+  background:#fff;opacity:0;
+  pointer-events:none
+}
+.flash-overlay.active{
+  display:block;
+  animation:flashPulse .3s ease 2
+}
+@keyframes flashPulse{
+  0%,100%{opacity:0}
+  50%{opacity:.25}
+}
+
+/* ── menu overlay ── */
+#menu{
+  display:none;
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.7);
+  z-index:100;
+  align-items:flex-end;
+  justify-content:center;
+  padding:20px;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px)
+}
+#menu.open{display:flex}
+#menu-sheet{
+  background:rgba(30,30,30,.95);
+  border-radius:20px;
+  padding:28px 24px;
+  width:100%;max-width:360px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,.06);
+  animation:sheetUp .25s ease
+}
+@keyframes sheetUp{
+  from{transform:translateY(20px);opacity:0}
+  to{transform:translateY(0);opacity:1}
+}
+#menu-sheet .label{
+  color:rgba(255,255,255,.4);
+  font-size:11px;letter-spacing:2px;
+  text-transform:uppercase;
+  margin-bottom:12px
+}
+#menu-sheet .presets{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr 1fr;
+  gap:10px;
+  margin-bottom:20px
+}
+#menu-sheet .presets button{
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.08);
+  color:#fff;
+  border-radius:14px;
+  padding:14px 0;
+  font-size:18px;font-weight:500;
+  cursor:pointer;
+  transition:background .2s,border-color .3s;
+  -webkit-tap-highlight-color:transparent
+}
+#menu-sheet .presets button:active{background:rgba(255,255,255,.14)}
+#menu-sheet .presets button.active{
+  border-color:rgba(255,255,255,.4);
+  background:rgba(255,255,255,.12)
+}
+#menu-sheet .divider{
+  height:1px;
+  background:rgba(255,255,255,.06);
+  margin:4px 0 12px
+}
+#menu-sheet .action-btn{
+  background:rgba(255,255,255,.06);
+  border:none;color:#fff;
+  border-radius:14px;
+  padding:16px 0;
+  font-size:16px;
+  width:100%;
+  cursor:pointer;
+  transition:background .2s;
+  -webkit-tap-highlight-color:transparent;
+  margin-bottom:8px
+}
+#menu-sheet .action-btn:active{background:rgba(255,255,255,.12)}
+#menu-sheet .close-btn{
+  background:rgba(255,255,255,.04);
+  border:none;color:rgba(255,255,255,.5);
+  border-radius:14px;
+  padding:14px 0;
+  font-size:15px;
+  width:100%;
+  cursor:pointer;
+  transition:background .2s;
+  -webkit-tap-highlight-color:transparent
+}
+#menu-sheet .close-btn:active{background:rgba(255,255,255,.1)}
+#menu-sheet .sets-display{
+  text-align:center;
+  color:rgba(255,255,255,.5);
+  font-size:14px;
+  margin-bottom:16px
+}
+#menu-sheet .sets-display strong{color:#fff;font-weight:600}
+</style>
+</head>
+<body>
+
+<div id="ball">
+  <svg viewBox="0 0 200 200">
+    <circle class="ring-bg" cx="100" cy="100" r="88"/>
+    <circle class="ring-fg" id="ring" cx="100" cy="100" r="88"
+      stroke="#00E676" stroke-dasharray="552.92" stroke-dashoffset="0"/>
+  </svg>
+  <div id="display">90</div>
+  <div id="status">PAUSED</div>
+</div>
+
+<div id="set-badge" class="hidden">x0</div>
+<div id="hint">点击开始 | 双击重置 | 长按菜单</div>
+<div class="flash-overlay" id="flash"></div>
+
+<div id="menu">
+  <div id="menu-sheet">
+    <div class="label">预设时间</div>
+    <div class="presets" id="presets">
+      <button data-s="60">60s</button>
+      <button data-s="90" class="active">90s</button>
+      <button data-s="120">120s</button>
+      <button data-s="180">180s</button>
+    </div>
+    <div class="sets-display">已完成组数：<strong id="menu-sets">0</strong></div>
+    <div class="divider"></div>
+    <button class="action-btn" id="reset-sets">组数清零</button>
+    <button class="action-btn" id="reset-all">重置全部</button>
+    <div class="divider"></div>
+    <button class="close-btn" id="close-menu">关闭</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  const PI2R = Math.PI * 2;
+  const CR  = 88;
+  const C   = PI2R * CR;
+  const LS  = localStorage;
+  const KEY = 'timer_state';
+
+  /* state */
+  let total     = 90;
+  let remain    = 90;
+  let running   = false;
+  let endTime   = null;
+  let sets      = 0;
+  let timerId   = null;
+  let wakeLock  = null;
+  let notifOn   = false;
+
+  /* DOM */
+  const ball    = document.getElementById('ball');
+  const display = document.getElementById('display');
+  const status  = document.getElementById('status');
+  const ring    = document.getElementById('ring');
+  const badge   = document.getElementById('set-badge');
+  const hint    = document.getElementById('hint');
+  const flash   = document.getElementById('flash');
+  const menu    = document.getElementById('menu');
+  const menuSets= document.getElementById('menu-sets');
+  const closeBtn= document.getElementById('close-menu');
+  const resetSetsBtn = document.getElementById('reset-sets');
+  const resetAllBtn  = document.getElementById('reset-all');
+  const pBtns   = document.querySelectorAll('#presets button');
+
+  /* ── presets ── */
+  pBtns.forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const s = parseInt(btn.dataset.s);
+      if (running) toggleTimer();
+      total = s;
+      remain = s;
+      pBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (menu.classList.contains('open')) hideMenu();
+      updateUI();
+      save();
+    });
+  });
+
+  /* ── menu ── */
+  function showMenu(){
+    menu.classList.add('open');
+    menuSets.textContent = sets;
+  }
+  function hideMenu(){
+    menu.classList.remove('open');
+  }
+  closeBtn.addEventListener('click', hideMenu);
+  menu.addEventListener('click', e => {
+    if (e.target === menu) hideMenu();
+  });
+  resetSetsBtn.addEventListener('click', () => {
+    sets = 0;
+    menuSets.textContent = '0';
+    updateUI();
+    save();
+  });
+  resetAllBtn.addEventListener('click', () => {
+    if (running) toggleTimer();
+    sets = 0;
+    remain = total;
+    updateUI();
+    save();
+    hideMenu();
+  });
+
+  /* ── color helpers ── */
+  function getColor(t){
+    if (t <= 10) return '#FF1744';
+    if (t <= 30) return '#FFD600';
+    return '#00E676';
+  }
+
+  function updateUI(){
+    display.textContent = remain;
+    const progress = remain / total;
+    ring.setAttribute('stroke-dashoffset', C * (1 - progress));
+    const clr = getColor(remain);
+    ring.setAttribute('stroke', clr);
+    display.style.color = clr;
+    status.textContent = running ? 'RUNNING' : 'PAUSED';
+    ball.className = running ? 'running' : 'paused';
+    badge.textContent = 'x' + sets;
+    badge.className = sets > 0 ? '' : 'hidden';
+    hint.className = running ? 'hidden' : '';
+  }
+
+  /* ── wake lock ── */
+  function releaseWakeLock(){
+    if (!wakeLock) return;
+    try { wakeLock.release(); } catch(e) {}
+    wakeLock = null;
+  }
+  async function requestWakeLock(){
+    if (!navigator.wakeLock) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        if (running) requestWakeLock();
+      });
+    } catch(e) {}
+  }
+
+  /* ── notification API ── */
+  function requestNotif(){
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') notifOn = true;
+    else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(p => { notifOn = p === 'granted'; });
+    }
+  }
+  function sendNotif(title, body){
+    if (!notifOn) return;
+    try { new Notification(title, { body, tag:'timer', silent:true }); } catch(e) {}
+  }
+
+  /* ── timer core ── */
+  function tick(){
+    if (!running) return;
+    remain = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+    updateUI();
+    if (remain > 0 && remain <= 10 && navigator.vibrate) {
+      navigator.vibrate(30);
+    }
+    if (remain <= 0) timerEnd();
+  }
+
+  function timerEnd(){
+    if (navigator.vibrate) navigator.vibrate([180,120,180,120,180]);
+    flash.className = 'flash-overlay active';
+    setTimeout(() => { flash.className = 'flash-overlay'; }, 800);
+    sendNotif('组间休息结束', '第 ' + (sets + 1) + ' 组开始！');
+    sets += 1;
+    remain = total;
+    endTime = Date.now() + total * 1000;
+    updateUI();
+    save();
+  }
+
+  function toggleTimer(){
+    if (running) {
+      running = false;
+      clearInterval(timerId);
+      timerId = null;
+      remain = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+      endTime = null;
+      releaseWakeLock();
+    } else {
+      if (remain <= 0) remain = total;
+      if (!notifOn) requestNotif();
+      running = true;
+      endTime = Date.now() + remain * 1000;
+      timerId = setInterval(tick, 200);
+      requestWakeLock();
+    }
+    updateUI();
+    save();
+  }
+
+  function resetTimer(){
+    if (running) toggleTimer();
+    remain = total;
+    updateUI();
+  }
+
+  /* ── volume button trigger ── */
+  document.addEventListener('keydown', function(e){
+    const code = e.code || '';
+    const key  = e.key  || '';
+    const kc   = e.keyCode;
+    if (code==='VolumeUp'||code==='VolumeDown'||
+        key==='VolumeUp'||key==='VolumeDown'||
+        kc===175||kc===174) {
+      e.preventDefault();
+      toggleTimer();
+    }
+  });
+  document.addEventListener('keyup', function(e){
+    const code = e.code || '';
+    const key  = e.key  || '';
+    const kc   = e.keyCode;
+    if (code==='VolumeUp'||code==='VolumeDown'||
+        key==='VolumeUp'||key==='VolumeDown'||
+        kc===175||kc===174) {
+      e.preventDefault();
+    }
+  });
+
+  /* ── visibility change ── */
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && running) {
+      tick();
+      requestWakeLock();
+    }
+  });
+
+  /* ── tap / drag logic ──
+     KEY FIX for mobile: touchstart uses preventDefault() + touch flag
+     to prevent the browser from synthesizing mouse events, which
+     caused the timer to double-trigger (start → immediately stop).  */
+  let tx0, ty0, bx0, by0;
+  let isDrag = false;
+  let lpTimer = null;
+  let tapId = null;      // single-tap setTimeout id
+  let pending = false;   // true while waiting for 2nd tap
+  let touchActive = false; // guards mouse handlers after touch
+  const DRAG = 10;
+  const LP   = 500;
+  const DBL  = 280;
+
+  function getPos(e){
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+  }
+
+  function onTouchStart(e){
+    e.preventDefault(); // ← prevents synthesized mouse events on mobile
+    touchActive = true;
+    const p = getPos(e);
+    tx0 = p.x; ty0 = p.y;
+    const r = ball.getBoundingClientRect();
+    bx0 = r.left; by0 = r.top;
+    isDrag = false;
+    if (lpTimer) clearTimeout(lpTimer);
+    lpTimer = setTimeout(() => {
+      if (!isDrag) {
+        if (running) toggleTimer();
+        showMenu();
+      }
+      lpTimer = null;
+    }, LP);
+  }
+
+  function onTouchMove(e){
+    e.preventDefault();
+    const p = getPos(e);
+    if (Math.abs(p.x - tx0) > DRAG || Math.abs(p.y - ty0) > DRAG) {
+      isDrag = true;
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    }
+    if (isDrag) {
+      let l = bx0 + (p.x - tx0);
+      let t = by0 + (p.y - ty0);
+      const bw = ball.offsetWidth, bh = ball.offsetHeight;
+      l = Math.max(0, Math.min(innerWidth - bw, l));
+      t = Math.max(0, Math.min(innerHeight - bh, t));
+      ball.style.left = l + 'px';
+      ball.style.top = t + 'px';
+      ball.style.transform = 'none';
+    }
+  }
+
+  function onTouchEnd(e){
+    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    if (menu.classList.contains('open') && !isDrag) return;
+    // clear touch flag soon so mouse events can work again
+    setTimeout(() => { touchActive = false; }, 200);
+
+    if (!isDrag) {
+      if (pending) {
+        // second tap → reset
+        clearTimeout(tapId);
+        tapId = null;
+        pending = false;
+        resetTimer();
+      } else {
+        pending = true;
+        tapId = setTimeout(() => {
+          if (pending) {
+            pending = false;
+            toggleTimer();
+          }
+        }, DBL);
+      }
+    } else {
+      save();
+    }
+  }
+
+  ball.addEventListener('touchstart', onTouchStart, { passive: false });
+  ball.addEventListener('touchmove', onTouchMove, { passive: false });
+  ball.addEventListener('touchend', onTouchEnd, { passive: true });
+  ball.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+  /* mouse fallback — blocked while a touch interaction is active */
+  let mouseDown = false;
+  ball.addEventListener('mousedown', e => {
+    if (touchActive) return;
+    mouseDown = true;
+    const p = getPos(e);
+    tx0 = p.x; ty0 = p.y;
+    const r = ball.getBoundingClientRect();
+    bx0 = r.left; by0 = r.top;
+    isDrag = false;
+  });
+  document.addEventListener('mousemove', e => {
+    if (!mouseDown || touchActive) return;
+    e.preventDefault();
+    const p = getPos(e);
+    if (Math.abs(p.x - tx0) > DRAG || Math.abs(p.y - ty0) > DRAG) {
+      isDrag = true;
+    }
+    if (isDrag) {
+      let l = bx0 + (p.x - tx0);
+      let t = by0 + (p.y - ty0);
+      const bw = ball.offsetWidth, bh = ball.offsetHeight;
+      l = Math.max(0, Math.min(innerWidth - bw, l));
+      t = Math.max(0, Math.min(innerHeight - bh, t));
+      ball.style.left = l + 'px';
+      ball.style.top = t + 'px';
+      ball.style.transform = 'none';
+    }
+  });
+  document.addEventListener('mouseup', e => {
+    if (!mouseDown || touchActive) return;
+    mouseDown = false;
+    if (!isDrag) {
+      if (pending) {
+        clearTimeout(tapId);
+        tapId = null;
+        pending = false;
+        resetTimer();
+      } else {
+        pending = true;
+        tapId = setTimeout(() => {
+          if (pending) {
+            pending = false;
+            toggleTimer();
+          }
+        }, DBL);
+      }
+    }
+  });
+
+  /* ── fullscreen (improves volume-key capture on Android) ── */
+  function enterFull(){
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      try { document.documentElement.requestFullscreen(); } catch(e) {}
+    }
+  }
+
+  /* ── localStorage ── */
+  function save(){
+    try {
+      const data = { total, sets, l: ball.style.left, t: ball.style.top };
+      LS.setItem(KEY, JSON.stringify(data));
+    } catch(e) {}
+  }
+  function load(){
+    try {
+      const raw = LS.getItem(KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d.total) {
+        total = d.total; remain = total;
+        pBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.s) === total));
+      }
+      if (d.sets) sets = d.sets;
+      if (d.l && d.t) {
+        ball.style.left = d.l;
+        ball.style.top = d.t;
+        ball.style.transform = 'none';
+      }
+    } catch(e) {}
+  }
+
+  /* ── PWA: register service worker ── */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  }
+
+  /* ── init ── */
+  load();
+  updateUI();
+  // enter fullscreen on first tap after load
+  ball.addEventListener('click', enterFull);
+})();
+</script>
+</body>
+</html>
