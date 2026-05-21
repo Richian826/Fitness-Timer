@@ -1,6 +1,6 @@
 /* 组间计时 — 离线 Service Worker */
 const CACHE = 'timer-v1';
-const FILES = ['index.html', 'manifest.json', 'icon.svg'];
+const FILES = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
