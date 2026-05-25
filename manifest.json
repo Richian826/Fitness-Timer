@@ -1,9 +1,12 @@
 {
+  "id": "interval-timer",
   "name": "组间计时",
   "short_name": "组间计时",
   "description": "极简健身组间间歇计时器",
-  "start_url": ".",
+  "start_url": "index.html",
+  "scope": ".",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#000000",
   "theme_color": "#000000",
   "orientation": "portrait",
@@ -16,8 +19,7 @@
     {
       "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
   ]
 }

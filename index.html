@@ -48,6 +48,7 @@ html,body{
 }
 #ball.running{box-shadow:0 0 40px rgba(0,230,118,.15)}
 #ball.paused{box-shadow:0 0 16px rgba(255,255,255,.05)}
+#ball.done{box-shadow:0 0 30px rgba(255,23,68,.25);border-color:rgba(255,23,68,.2)}
 
 /* svg ring */
 #ball svg{
@@ -226,6 +227,24 @@ html,body{
   margin-bottom:16px
 }
 #menu-sheet .sets-display strong{color:#fff;font-weight:600}
+.custom-row{
+  display:flex;gap:10px;margin-bottom:18px
+}
+.custom-row input{
+  flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  color:#fff;border-radius:14px;padding:14px 16px;font-size:18px;text-align:center;
+  -webkit-appearance:none;outline:none;font-variant-numeric:tabular-nums;
+  min-width:0;font-family:inherit
+}
+.custom-row input:focus{border-color:rgba(0,230,118,.4)}
+.custom-row input::placeholder{color:rgba(255,255,255,.2)}
+.custom-row button{
+  background:rgba(0,230,118,.15);border:1px solid rgba(0,230,118,.25);
+  color:#00E676;border-radius:14px;padding:14px 20px;font-size:16px;
+  cursor:pointer;white-space:nowrap;font-family:inherit;
+  -webkit-tap-highlight-color:transparent;transition:background .2s
+}
+.custom-row button:active{background:rgba(0,230,118,.25)}
 </style>
 </head>
 <body>
@@ -252,6 +271,10 @@ html,body{
       <button data-s="90" class="active">90s</button>
       <button data-s="120">120s</button>
       <button data-s="180">180s</button>
+    </div>
+    <div class="custom-row">
+      <input type="number" id="custom-val" placeholder="自定义秒数" min="1" max="3600" value="" inputmode="numeric">
+      <button id="apply-custom">应用</button>
     </div>
     <div class="sets-display">已完成组数：<strong id="menu-sets">0</strong></div>
     <div class="divider"></div>
@@ -295,6 +318,8 @@ html,body{
   const closeBtn= document.getElementById('close-menu');
   const resetSetsBtn = document.getElementById('reset-sets');
   const resetAllBtn  = document.getElementById('reset-all');
+  const customVal = document.getElementById('custom-val');
+  const applyCustom = document.getElementById('apply-custom');
   const pBtns   = document.querySelectorAll('#presets button');
 
   /* ── presets ── */
@@ -311,6 +336,20 @@ html,body{
       updateUI();
       save();
     });
+  });
+
+  /* custom time */
+  applyCustom.addEventListener('click', () => {
+    const v = parseInt(customVal.value);
+    if (!v || v < 1) return;
+    if (running) toggleTimer();
+    total = v;
+    remain = v;
+    pBtns.forEach(b => b.classList.remove('active'));
+    customVal.value = '';
+    hideMenu();
+    updateUI();
+    save();
   });
 
   /* ── menu ── */
@@ -354,8 +393,16 @@ html,body{
     const clr = getColor(remain);
     ring.setAttribute('stroke', clr);
     display.style.color = clr;
-    status.textContent = running ? 'RUNNING' : 'PAUSED';
-    ball.className = running ? 'running' : 'paused';
+    if (running) {
+      status.textContent = 'RUNNING';
+      ball.className = 'running';
+    } else if (remain <= 0 && !running) {
+      status.textContent = 'DONE';
+      ball.className = 'done';
+    } else {
+      status.textContent = 'PAUSED';
+      ball.className = 'paused';
+    }
     badge.textContent = 'x' + sets;
     badge.className = sets > 0 ? '' : 'hidden';
     hint.className = running ? 'hidden' : '';
@@ -402,13 +449,17 @@ html,body{
   }
 
   function timerEnd(){
-    if (navigator.vibrate) navigator.vibrate([180,120,180,120,180]);
+    if (navigator.vibrate) navigator.vibrate([200,150,200,150,200]);
     flash.className = 'flash-overlay active';
     setTimeout(() => { flash.className = 'flash-overlay'; }, 800);
-    sendNotif('组间休息结束', '第 ' + (sets + 1) + ' 组开始！');
+    sendNotif('组间休息结束', '已休息完成！继续锻炼！');
     sets += 1;
-    remain = total;
-    endTime = Date.now() + total * 1000;
+    running = false;
+    clearInterval(timerId);
+    timerId = null;
+    remain = 0;
+    endTime = null;
+    releaseWakeLock();
     updateUI();
     save();
   }
@@ -421,14 +472,17 @@ html,body{
       remain = Math.max(0, Math.round((endTime - Date.now()) / 1000));
       endTime = null;
       releaseWakeLock();
-    } else {
-      if (remain <= 0) remain = total;
-      if (!notifOn) requestNotif();
-      running = true;
-      endTime = Date.now() + remain * 1000;
-      timerId = setInterval(tick, 200);
-      requestWakeLock();
+      updateUI();
+      save();
+      return;
     }
+    // not running — start new countdown
+    if (!notifOn) requestNotif();
+    remain = total;
+    running = true;
+    endTime = Date.now() + remain * 1000;
+    timerId = setInterval(tick, 200);
+    requestWakeLock();
     updateUI();
     save();
   }
@@ -642,7 +696,9 @@ html,body{
 
   /* ── PWA: register service worker ── */
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function(){});
+    navigator.serviceWorker.register('sw.js').catch(function(err){
+      console.warn('SW registration failed:', err);
+    });
   }
 
   /* ── init ── */
