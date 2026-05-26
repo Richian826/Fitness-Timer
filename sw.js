@@ -3,8 +3,13 @@ const CACHE = 'timer-v2';
 const FILES = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
+  // 逐个缓存，单个失败不影响整体安装
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(c =>
+      Promise.allSettled(FILES.map(url =>
+        c.add(url).catch(() => {})
+      ))
+    ).then(() => self.skipWaiting())
   );
 });
 

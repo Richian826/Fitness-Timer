@@ -281,6 +281,8 @@ html,body{
     <button class="action-btn" id="reset-sets">组数清零</button>
     <button class="action-btn" id="reset-all">重置全部</button>
     <div class="divider"></div>
+    <button class="action-btn install-btn" id="install-app" style="display:none;border:1px solid rgba(0,230,118,.25);background:rgba(0,230,118,.08);color:#00E676">安装到桌面</button>
+    <div class="divider"></div>
     <button class="close-btn" id="close-menu">关闭</button>
   </div>
 </div>
@@ -699,6 +701,41 @@ html,body{
     navigator.serviceWorker.register('sw.js').catch(function(err){
       console.warn('SW registration failed:', err);
     });
+  }
+
+  /* ── PWA: native install prompt ── */
+  let deferredPrompt = null;
+  const installBtn = document.getElementById('install-app');
+
+  window.addEventListener('beforeinstallprompt', e => {
+    // Chrome确认此站点可作为PWA安装
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = '';
+  });
+
+  installBtn.addEventListener('click', () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(result => {
+      if (result.outcome === 'accepted') {
+        console.log('PWA installed via prompt');
+      }
+      deferredPrompt = null;
+      installBtn.style.display = 'none';
+    });
+  });
+
+  window.addEventListener('appinstalled', () => {
+    console.log('PWA installed');
+    deferredPrompt = null;
+    installBtn.style.display = 'none';
+  });
+
+  /* detect if running as standalone (proper WebAPK) vs browser tab */
+  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+    // running standalone — proper app mode
+    document.getElementById('hint').textContent = '音量键启停 | 双击重置 | 长按菜单';
   }
 
   /* ── init ── */
